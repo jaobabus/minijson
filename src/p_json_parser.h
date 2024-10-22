@@ -3,9 +3,11 @@
 #include "p_json_utility.h"
 #include <iomanip>
 #include <iostream>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <tuple>
+#include <variant>
 #include <vector>
 
 namespace mini_json::_private
@@ -48,6 +50,8 @@ public:
     template <typename T> T parse(Type<T>);
 
     template <typename T> std::vector<T> parse(Type<std::vector<T>>);
+    template <typename T> std::optional<T> parse(Type<std::optional<T>>);
+    template <typename... T> std::variant<T...> parse(Type<std::variant<T...>>);
 
     int parse(Type<int>);
     unsigned parse(Type<unsigned>);
@@ -107,8 +111,7 @@ template <typename FwIt> template <typename T> T ParseImpl<FwIt>::parse(Type<T>)
         case ParseState::Value:
             executeByPropertyName<T>(key.c_str(), [&](auto property) {
                 using PropertyType = typename decltype(property)::Type;
-                (PropertyType&)(result.*(property.member)) =
-                    ParseImpl<FwIt>{begin, end}.parse(Type<PropertyType>{});
+                property.set(&result, ParseImpl<FwIt>{begin, end}.parse(Type<PropertyType>{}));
             });
             state = ParseState::Default;
             key.clear();
@@ -139,6 +142,48 @@ std::vector<T> ParseImpl<FwIt>::parse(Type<std::vector<T>>)
         assert_correct_value_end(']');
     }
     ++begin;
+    return result;
+}
+
+template <typename FwIt>
+template <typename T>
+std::optional<T> ParseImpl<FwIt>::parse(Type<std::optional<T>>)
+{
+    return std::optional<T>{parse(Type<T>{})};
+}
+
+
+
+template <typename FwIt>
+template <typename... T>
+std::variant<T...> ParseImpl<FwIt>::parse(Type<std::variant<T...>>)
+{
+    std::tuple<Type<T>...> t;
+    bool parsed = false;
+    std::variant<T...> result;
+    std::string errors;
+    auto start = begin;
+    auto parse_next = [&](auto t)
+    {
+        if (parsed)
+            return 0;
+        begin = start;
+        try {
+            result = parse(t);
+            parsed = true;
+        }
+        catch (ParseError& err) {
+            errors += "Error for ";
+            errors += typeid(t).name();
+            errors += ": '";
+            errors += err.what();
+            errors += "', ";
+        }
+        return 0;
+    };
+    std::apply([&](auto&&... args) {((parse_next(args)), ...);}, t);
+    if (not parsed)
+        throw ParseError("Error parse variant, errors: " + errors);
     return result;
 }
 

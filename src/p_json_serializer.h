@@ -2,15 +2,25 @@
 #include "p_json_error.h"
 #include "p_json_utility.h"
 #include <iomanip>
+#include <optional>
 #include <sstream>
 #include <string>
+#include <variant>
 #include <vector>
 
 namespace mini_json::_private
 {
-template <typename TStream> class SerializerImpl
+template <typename TStream>
+class SerializerImpl
 {
     TStream& stream;
+
+private:
+    template<typename  T>
+    static constexpr auto get_props()
+    {
+        return SerializeInfo<T>::fields();
+    }
 
 public:
     SerializerImpl(TStream& stream)
@@ -22,15 +32,17 @@ public:
     {
         stream << "{";
 
-        constexpr auto n_properties = std::tuple_size<decltype(T::json_properties())>::value;
-
         const char* separator = "";
-        for_sequence(std::make_index_sequence<n_properties>{}, [&](auto i) {
-            constexpr auto property = std::get<i>(T::json_properties());
+
+        constexpr auto props = get_props<T>();
+        constexpr auto n_properties = std::tuple_size<decltype(props)>::value;
+        for_sequence(std::make_index_sequence<n_properties>{}, [&](auto i)
+        {
+            constexpr auto prop = std::get<i>(props);
             stream << separator;
-            this->serialize(std::string{property.name});
+            this->serialize(std::string{prop.name});
             stream << ":";
-            this->serialize(item.*(property.member));
+            this->serialize(prop.get(&item));
             separator = ",";
         });
 
@@ -50,12 +62,28 @@ public:
         stream << "]";
     }
 
+    template <typename... T> void serialize(std::variant<T...> const& item)
+    {
+        std::visit([this](auto& v) { this->serialize(v); }, item);
+    }
+
+    template <typename T> void serialize(std::optional<T> const& item)
+    {
+        if (item.has_value())
+            this->serialize(item.value());
+    }
+
     void serialize(std::string const& item)
     {
         stream << std::quoted(item);
     }
 
     void serialize(int item)
+    {
+        stream << item;
+    }
+
+    void serialize(unsigned int item)
     {
         stream << item;
     }

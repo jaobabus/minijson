@@ -6,6 +6,7 @@ option(ci "Enable additional error flags." OFF)
 if(CMAKE_COPILER_ID_GNUCC)
     option(coverage "Enable coverage reporting for gcc/clang" OFF)
 endif()
+set(CMAKE_CXX_STANDARD 17)
 
 #[ library ]
 
@@ -27,6 +28,12 @@ if(ci)
     endif()
 
 endif()
+
+add_executable(test_variant test/test_variant.cpp)
+target_include_directories(test_variant PUBLIC src/)
+target_link_libraries(test_variant PRIVATE gtest)
+target_compile_definitions(test_variant PUBLIC GTEST_CATCH_EXCEPTIONS=0)
+target_compile_options(test_variant PUBLIC -DGTEST_CATCH_EXCEPTIONS=0)
 
 #[ tests ]
 
